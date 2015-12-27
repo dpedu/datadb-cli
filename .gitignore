@@ -1,0 +1,4 @@
+testenv
+build
+datadb.egg-info
+dist
