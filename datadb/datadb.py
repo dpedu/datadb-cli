@@ -132,6 +132,14 @@ def status(profile, conf):
     return SyncStatus.DATA_MISSING
 
 
+def shell_exec(cmd, workdir='/tmp/'):
+    """
+    Execute a command in shell, wait for exit.
+    """
+    print("Calling: {}".format(cmd))
+    subprocess.Popen(cmd, shell=True, cwd=workdir).wait()
+
+
 def main():
     """
     Excepts a config file at /etc/datadb.ini. Example:
@@ -206,10 +214,22 @@ def main():
     args = parser.parse_args()
     
     if args.mode == 'restore':
+        if args.restore_preexec:
+            shell_exec(args.restore_preexec)
+        
         restore(args.profile, config[args.profile], force=args.force)
-    
+        
+        if args.restore_postexec:
+            shell_exec(args.restore_postexec)
+        
     elif args.mode == 'backup':
+        if args.export_preexec:
+            shell_exec(args.export_preexec)
+        
         backup(args.profile, config[args.profile])
+        
+        if args.export_postexec:
+            shell_exec(args.export_postexec)
     
     elif args.mode == 'status':
         info = status(args.profile, config[args.profile])
