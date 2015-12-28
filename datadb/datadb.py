@@ -214,22 +214,22 @@ def main():
     args = parser.parse_args()
     
     if args.mode == 'restore':
-        if args.restore_preexec:
-            shell_exec(args.restore_preexec)
+        if config[args.profile]['restore_preexec']:
+            shell_exec(config[args.profile]['restore_preexec'])
         
         restore(args.profile, config[args.profile], force=args.force)
         
-        if args.restore_postexec:
-            shell_exec(args.restore_postexec)
+        if config[args.profile]['restore_postexec']:
+            shell_exec(config[args.profile]['restore_postexec'])
         
     elif args.mode == 'backup':
-        if args.export_preexec:
-            shell_exec(args.export_preexec)
+        if config[args.profile]['export_preexec']:
+            shell_exec(config[args.profile]['export_preexec'])
         
         backup(args.profile, config[args.profile])
         
-        if args.export_postexec:
-            shell_exec(args.export_postexec)
+        if config[args.profile]['export_postexec']:
+            shell_exec(config[args.profile]['export_postexec'])
     
     elif args.mode == 'status':
         info = status(args.profile, config[args.profile])
