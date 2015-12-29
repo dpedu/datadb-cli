@@ -2,3 +2,4 @@ testenv
 build
 datadb.egg-info
 dist
+test.ini

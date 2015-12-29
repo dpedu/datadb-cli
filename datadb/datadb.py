@@ -4,7 +4,7 @@ import argparse
 from configparser import ConfigParser
 from urllib.parse import urlparse
 from os.path import normpath, join, exists
-from os import chmod, chown, stat
+from os import chmod, chown, stat, environ
 from enum import Enum
 import subprocess
 from requests import get,put
@@ -184,15 +184,21 @@ def main():
     *export_postexec*: Shell command to exec after pushing data
     
     """
+    
+    conf_path = environ["DATADB_CONF"] if "DATADB_CONF" in environ else "/etc/datadb.ini"
+    
     # Load profiles
     config = ConfigParser()
-    config.read("/etc/datadb.ini")
+    config.read(conf_path)
     
     config = {section:{k:config[section][k] for k in config[section]} for section in config.sections()}
     
     parser = argparse.ArgumentParser(description="Backupdb Agent depends on config: /etc/datadb.ini")
     
-    parser.add_argument('--force', default=False, action='store_true', help='force restore operation if destination data already exists')
+    parser.add_argument('-f', '--force', default=False, action='store_true', help='force restore operation if destination data already exists')
+    parser.add_argument('-n', '--no-exec', default=False, action='store_true', help='don\'t run pre/post-exec commands')
+    parser.add_argument('-b', '--no-pre-exec', default=False, action='store_true', help='don\'t run pre-exec commands')
+    parser.add_argument('-m', '--no-post-exec', default=False, action='store_true', help='don\'t run post-exec commands')
     
     parser.add_argument('profile', type=str, choices=config.keys(), help='Profile to restore')
     
@@ -213,22 +219,26 @@ def main():
     
     args = parser.parse_args()
     
+    if args.no_exec:
+        args.no_pre_exec = True
+        args.no_post_exec = True
+    
     if args.mode == 'restore':
-        if config[args.profile]['restore_preexec']:
+        if not args.no_pre_exec and config[args.profile]['restore_preexec']:
             shell_exec(config[args.profile]['restore_preexec'])
         
         restore(args.profile, config[args.profile], force=args.force)
         
-        if config[args.profile]['restore_postexec']:
+        if not args.no_post_exec and config[args.profile]['restore_postexec']:
             shell_exec(config[args.profile]['restore_postexec'])
         
     elif args.mode == 'backup':
-        if config[args.profile]['export_preexec']:
+        if not args.no_pre_exec and config[args.profile]['export_preexec']:
             shell_exec(config[args.profile]['export_preexec'])
         
         backup(args.profile, config[args.profile])
         
-        if config[args.profile]['export_postexec']:
+        if not args.no_post_exec and config[args.profile]['export_postexec']:
             shell_exec(config[args.profile]['export_postexec'])
     
     elif args.mode == 'status':

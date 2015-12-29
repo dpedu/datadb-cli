@@ -19,8 +19,9 @@ Just python3 and [requests](http://python-requests.org/).
 For one, this is beta and some things are hard-coded. In datadb.py it is recommended to change the DATADB_HTTP_API URL.
 This URL should be the cgi-bin path of an http server running [datadb-scripts](http://gitlab.xmopx.net/dave/datadb-scripts).
 
-Next, a config file must be created for each directory to be restored/backed up. It lives at /etc/datadb.ini and contains
-many entires of this format:
+Next, a config file must be created with entries for each directory to be restored/backed up. The config at `/etc/datadb.ini`
+is read by default, however this path can be overriden by setting the environmental variable `DATADB_CONF`. The file should
+contain many entires of this format:
 
 ```
 [profile_name]
@@ -68,12 +69,20 @@ Datadb makes some assumptions about it's environment.
 
 ### CLI Usage
 
-* Restore from backup: `datadb [--force] <profile_name> restore`
+`datadb [--no-exec] [--no-pre-exec] [--no-post-exec] [--force] profile_name restore|backup|status`
+
+* `--no-exec`: Do not execute restore and export pre and post exec commmands
+* `--no-pre-exec`: Do not execute restore and export preexec commmands
+* `--no-post-exec`: Do not execute restore and export postexec commmands
+* `--force`: Allow overwriting existing data or existing backups
+
+**Restore from backup:** `datadb [options] <profile_name> restore`
 
 Restore operations have a degree of sanity checking. Upon a successful restore, a file named *.datadb.lock* will be created in the local dir. Datadb checks for this file before doing restore operations, to prevent overwriting live data with an old backup. This check can be overridden with the `--force` command line option.
 
-* Backup to remote server: `datadb <profile_name> backup`
-* Check status: `datadb <profile_name> status`
+**Backup to remote server:** `datadb <profile_name> backup`
+
+**Check status:** `datadb <profile_name> status`
 
 Command line usage is agnostic to the underlying transport protocol used.
 
@@ -82,7 +91,5 @@ Command line usage is agnostic to the underlying transport protocol used.
 * Fix hard coded stuff mentioned above
 * Support config file-less usage
 * Sync all command
-* Option to override config path
 * Nicer config parsing
 * Implement security
-* Implement pre/post exec functions
