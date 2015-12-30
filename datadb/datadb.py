@@ -7,7 +7,7 @@ from os.path import normpath, join, exists
 from os import chmod, chown, stat, environ
 from enum import Enum
 import subprocess
-from requests import get,put
+from requests import get,put,head
 
 SSH_KEY_PATH = '/root/.ssh/datadb.key'
 RSYNC_DEFAULT_ARGS = ['rsync', '-avzr', '--exclude=.datadb.lock', '--whole-file', '--one-file-system', '--delete', '-e', 'ssh -i {} -p 4874 -o StrictHostKeyChecking=no'.format(SSH_KEY_PATH)]
@@ -31,6 +31,12 @@ def restore(profile, conf, force=False): #remote_uri, local_dir, identity='/root
     
     original_perms = stat(conf["dir"])
     dest = urlparse(conf["uri"])
+    
+    status_code = head(DATADB_HTTP_API+'get_backup', params={'proto':'rsync', 'name':profile}).status_code
+    if status_code:
+        print("Connected to datadb, but datasource '{}' doesn't exist. Exiting".format(profile))
+        # TODO: special exit code >1 to indicate this?
+        return
     
     if dest.scheme == 'rsync':
         args = RSYNC_DEFAULT_ARGS[:]
