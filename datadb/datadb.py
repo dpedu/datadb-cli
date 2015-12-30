@@ -32,8 +32,8 @@ def restore(profile, conf, force=False): #remote_uri, local_dir, identity='/root
     original_perms = stat(conf["dir"])
     dest = urlparse(conf["uri"])
     
-    status_code = head(DATADB_HTTP_API+'get_backup', params={'proto':'rsync', 'name':profile}).status_code
-    if status_code:
+    status_code = head(DATADB_HTTP_API+'get_backup', params={'proto':dest.scheme, 'name':profile}).status_code
+    if status_code == 404:
         print("Connected to datadb, but datasource '{}' doesn't exist. Exiting".format(profile))
         # TODO: special exit code >1 to indicate this?
         return
