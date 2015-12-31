@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from setuptools import setup
 
-__version__ = "0.0.0"
+from datadb import __version__
 
 setup(name='datadb',
     version=__version__,
