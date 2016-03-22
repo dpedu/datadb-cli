@@ -104,7 +104,11 @@ def backup(profile, conf, force=False):
         
         #print("Rsync backup call: {}".format(' '.join(args)))
         
-        subprocess.check_call(args)
+        try:
+            subprocess.check_call(args)
+        except subprocess.CalledProcessError as cpe:
+            if cpe.returncode not in [0,24]: # ignore partial transfer due to vanishing files on our end
+                raise
     
     elif dest.scheme == 'archive':
         # CD to local source dir
