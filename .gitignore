@@ -3,3 +3,6 @@ build
 datadb.egg-info
 dist
 test.ini
+datadb.key
+*__pycache__*
+

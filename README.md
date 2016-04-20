@@ -86,6 +86,13 @@ Restore operations have a degree of sanity checking. Upon a successful restore, 
 
 Command line usage is agnostic to the underlying transport protocol used.
 
+### Testing
+
+The following environment variables can be used to ease testing:
+
+* DATADB_CONF=./example.ini
+* DATADB_KEYPATH=./datadb.key
+
 ## TODO
 
 * Fix hard coded stuff mentioned above

@@ -9,7 +9,7 @@ from enum import Enum
 import subprocess
 from requests import get,put,head
 
-SSH_KEY_PATH = '/root/.ssh/datadb.key'
+SSH_KEY_PATH = environ["DATADB_KEYPATH"] if "DATADB_KEYPATH" in environ else '/root/.ssh/datadb.key'
 RSYNC_DEFAULT_ARGS = ['rsync', '-avzr', '--exclude=.datadb.lock', '--whole-file', '--one-file-system', '--delete', '-e', 'ssh -i {} -p 4874 -o StrictHostKeyChecking=no'.format(SSH_KEY_PATH)]
 DATADB_HTTP_API = 'http://datadb.services.davepedu.com:4875/cgi-bin/'
 
@@ -93,6 +93,12 @@ def backup(profile, conf, force=False):
     if dest.scheme == 'rsync':
         args = RSYNC_DEFAULT_ARGS[:]
         
+        # Excluded paths
+        for exclude_path in conf["exclude"].split(","):
+            if not exclude_path == "":
+                args.append("--exclude")
+                args.append(exclude_path)
+        
         # Add local dir
         args.append(normpath(conf["dir"])+'/')
         
@@ -114,7 +120,15 @@ def backup(profile, conf, force=False):
         # CD to local source dir
         # create tarball
         # http PUT file to backup server
-        args_tar = ['tar', '--exclude=.datadb.lock', '-zcv', './']
+        args_tar = ['tar', '--exclude=.datadb.lock']
+        
+        # Excluded paths
+        for exclude_path in conf["exclude"].split(","):
+            if not exclude_path == "":
+                args_tar.append("--exclude")
+                args_tar.append(exclude_path)
+
+        args_tar += ['-zcv', './']
         args_curl = ['curl', '-v', '-XPUT', '--data-binary', '@-', '{}new_backup?proto=archive&name={}&keep={}'.format(DATADB_HTTP_API, profile, conf["keep"])]
         
         print("Tar backup call: {} | {}".format(' '.join(args_tar), ' '.join(args_curl)))
@@ -164,6 +178,7 @@ def main():
     restore_postexec=
     export_preexec=
     export_postexec=
+    exclude=
     ----------------------------
     
     Each [section] defines one backup task.
@@ -192,6 +207,8 @@ def main():
     *export_preexec*: Shell command to exec before pushing data
     
     *export_postexec*: Shell command to exec after pushing data
+    
+    *exclude*: if the underlying transport method supports excluding paths, a comma separated list of paths to exclude. Applies to backup operations only.
     
     """
     
