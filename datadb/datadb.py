@@ -8,6 +8,7 @@ from os import chmod, chown, stat, environ
 from enum import Enum
 import subprocess
 from requests import get,put,head
+import json
 
 SSH_KEY_PATH = environ["DATADB_KEYPATH"] if "DATADB_KEYPATH" in environ else '/root/.ssh/datadb.key'
 RSYNC_DEFAULT_ARGS = ['rsync', '-avzr', '--exclude=.datadb.lock', '--whole-file', '--one-file-system', '--delete', '-e', 'ssh -i {} -p 4874 -o StrictHostKeyChecking=no'.format(SSH_KEY_PATH)]
@@ -103,7 +104,7 @@ def backup(profile, conf, force=False):
         args.append(normpath(conf["dir"])+'/')
         
         # Hit backupdb via http to retreive absolute path of rsync destination of remote server
-        rsync_path = get(DATADB_HTTP_API+'new_backup', params={'proto':'rsync', 'name':profile, 'keep':conf["keep"]}).text.rstrip()
+        rsync_path, token = get(DATADB_HTTP_API+'new_backup', params={'proto':'rsync', 'name':profile, 'keep':conf["keep"]}).json()
         
         # Add rsync source path
         args.append(normpath('nexus@{}:{}'.format(dest.netloc, rsync_path))+'/')
@@ -115,6 +116,8 @@ def backup(profile, conf, force=False):
         except subprocess.CalledProcessError as cpe:
             if cpe.returncode not in [0,24]: # ignore partial transfer due to vanishing files on our end
                 raise
+        # confirm completion
+        put(DATADB_HTTP_API+'new_backup', params={'proto':'rsync', 'name':profile, 'token': token, 'keep':conf["keep"]})
     
     elif dest.scheme == 'archive':
         # CD to local source dir

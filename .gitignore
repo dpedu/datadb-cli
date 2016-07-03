@@ -1,8 +1,9 @@
-testenv
+datadb/__init__.py andtestenv
 build
 datadb.egg-info
 dist
 test.ini
 datadb.key
 *__pycache__*
-
+.DS_Store
+testdata
