@@ -95,16 +95,22 @@ def backup(profile, conf, force=False):
         args = RSYNC_DEFAULT_ARGS[:]
         
         # Excluded paths
-        for exclude_path in conf["exclude"].split(","):
-            if not exclude_path == "":
-                args.append("--exclude")
-                args.append(exclude_path)
+        if conf["exclude"]:
+            for exclude_path in conf["exclude"].split(","):
+                if not exclude_path == "":
+                    args.append("--exclude")
+                    args.append(exclude_path)
         
         # Add local dir
         args.append(normpath(conf["dir"])+'/')
         
+        new_backup_params = {'proto':'rsync', 
+                             'name':profile, 
+                             'keep':conf["keep"]}
+        if conf["inplace"]:
+            new_backup_params["inplace"] = 1
         # Hit backupdb via http to retreive absolute path of rsync destination of remote server
-        rsync_path, token = get(DATADB_HTTP_API+'new_backup', params={'proto':'rsync', 'name':profile, 'keep':conf["keep"]}).json()
+        rsync_path, token = get(DATADB_HTTP_API+'new_backup', params=new_backup_params).json()
         
         # Add rsync source path
         args.append(normpath('nexus@{}:{}'.format(dest.netloc, rsync_path))+'/')
@@ -116,8 +122,10 @@ def backup(profile, conf, force=False):
         except subprocess.CalledProcessError as cpe:
             if cpe.returncode not in [0,24]: # ignore partial transfer due to vanishing files on our end
                 raise
-        # confirm completion
-        put(DATADB_HTTP_API+'new_backup', params={'proto':'rsync', 'name':profile, 'token': token, 'keep':conf["keep"]})
+        
+        # confirm completion if backup wasnt already in place
+        if not conf["inplace"]:
+            put(DATADB_HTTP_API+'new_backup', params={'proto':'rsync', 'name':profile, 'token': token, 'keep':conf["keep"]})
     
     elif dest.scheme == 'archive':
         # CD to local source dir
@@ -126,10 +134,11 @@ def backup(profile, conf, force=False):
         args_tar = ['tar', '--exclude=.datadb.lock']
         
         # Excluded paths
-        for exclude_path in conf["exclude"].split(","):
-            if not exclude_path == "":
-                args_tar.append("--exclude")
-                args_tar.append(exclude_path)
+        if conf["exclude"]:
+            for exclude_path in conf["exclude"].split(","):
+                if not exclude_path == "":
+                    args_tar.append("--exclude")
+                    args_tar.append(exclude_path)
 
         args_tar += ['-zcv', './']
         args_curl = ['curl', '-v', '-XPUT', '--data-binary', '@-', '{}new_backup?proto=archive&name={}&keep={}'.format(DATADB_HTTP_API, profile, conf["keep"])]
@@ -213,8 +222,19 @@ def main():
     
     *exclude*: if the underlying transport method supports excluding paths, a comma separated list of paths to exclude. Applies to backup operations only.
     
+    *inplace*: rsync only. if enabled, the server will keep only a single copy that you will rsync over. intended for single copies of LARGE datasets. overrides "keep".
+    
     """
     
+    required_conf_params = ['dir', 'uri']
+    conf_params = {'export_preexec':None,
+                   'exclude':None,
+                   'keep':5,
+                   'restore_preexec':None,
+                   'restore_postexec':None,
+                   'auth':'',
+                   'export_postexec':None,
+                   'inplace':False}
     conf_path = environ["DATADB_CONF"] if "DATADB_CONF" in environ else "/etc/datadb.ini"
     
     # Load profiles
@@ -222,7 +242,14 @@ def main():
     config.read(conf_path)
     
     config = {section:{k:config[section][k] for k in config[section]} for section in config.sections()}
-    
+    for conf_k, conf_dict in config.items():
+        for expect_param, expect_default in conf_params.items():
+            if expect_param not in conf_dict.keys():
+                conf_dict[expect_param] = expect_default
+        for expect_param in required_conf_params:
+            if expect_param not in conf_dict.keys():
+                raise Exception("Required parameter {} missing for profile {}".format(expect_param, conf_k))
+
     parser = argparse.ArgumentParser(description="Backupdb Agent depends on config: /etc/datadb.ini")
     
     parser.add_argument('-f', '--force', default=False, action='store_true', help='force restore operation if destination data already exists')
