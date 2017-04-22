@@ -86,12 +86,17 @@ Restore operations have a degree of sanity checking. Upon a successful restore, 
 
 Command line usage is agnostic to the underlying transport protocol used.
 
-### Testing
 
-The following environment variables can be used to ease testing:
+### Tips
+
+If available, `pigz` will be selected over gzip. Pigz is a multicore-capable implementation of gzip and is recommended
+on multicore machines. See http://zlib.net/pigz/.
+
+The following environment variables can be used to ease testing or deployment:
 
 * DATADB_CONF=./example.ini
 * DATADB_KEYPATH=./datadb.key
+* DATADB_HTTP_API='http://127.0.0.1:1234/cgi-bin/'
 
 ## TODO
 
