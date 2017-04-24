@@ -163,7 +163,11 @@ def backup(profile, conf, force=False):
 
         args_tar = ['ionice', '-c', '3',
                     'nice', '-n', '19',
-                    'tar', '--exclude=.datadb.lock', '--warning=no-file-changed', '--ignore-failed-read']
+                    'tar', '--exclude=.datadb.lock',
+                           '--warning=no-file-changed',
+                           '--warning=no-file-removed',
+                           '--warning=no-file-ignored',
+                           '--warning=no-file-shrank']
 
         # Use pigz if available (Parallel gzip - http://zlib.net/pigz/)
         if has_binary("pigz"):
@@ -182,7 +186,7 @@ def backup(profile, conf, force=False):
         tar_dir = normpath(conf["dir"]) + '/'
         print("Tar call in {}: {}".format(args_tar, tar_dir))
 
-        tar = subprocess.Popen(args_tar, stdout=subprocess.PIPE, cwd=tar_dir)
+        tar = subprocess.Popen(args_tar, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=tar_dir)
 
         put_url = '{}new_backup?proto=archive&name={}&keep={}'.format(DATADB_HTTP_API, profile, conf["keep"])
         print("Putting to: {}".format(put_url))
@@ -191,9 +195,23 @@ def backup(profile, conf, force=False):
         if upload.status_code != 200:
             raise Exception("Upload failed with code: {}".format(upload.status_code))
 
+        # Tar does not have an option to ignore file-removed errors. The warnings can be hidden but even with
+        # --ignore-failed-read, file-removed errors cause a non-zero exit. So, hide the warnings we don't care about
+        # using --warnings=no-xxx and scan output for unknown messages, assuming anything found is bad.
+        found_tar_error = False
+        tar_errors = []
+        for line in tar.stderr:
+            line = line.decode("UTF-8").strip()
+            if not line.startswith("./"):
+                found_tar_error = True
+                if line not in tar_errors:
+                    tar_errors.append(line)
+            print(line)
+
         tar.wait()
-        if tar.returncode != 0:
-            raise Exception("Tar process exited with nonzero code {}".format(tar.returncode))
+        if tar.returncode != 0 and found_tar_error:
+            raise Exception("Tar process exited with nonzero code {}. Tar errors: \n    {}".
+                            format(tar.returncode, "\n    ".join(tar_errors)))
 
 
 def status(profile, conf):
@@ -350,10 +368,11 @@ def main():
         if not args.no_pre_exec and config[args.profile]['export_preexec']:
             shell_exec(config[args.profile]['export_preexec'])
 
-        backup(args.profile, config[args.profile], force=args.force)
-
-        if not args.no_post_exec and config[args.profile]['export_postexec']:
-            shell_exec(config[args.profile]['export_postexec'])
+        try:
+            backup(args.profile, config[args.profile], force=args.force)
+        finally:
+            if not args.no_post_exec and config[args.profile]['export_postexec']:
+                shell_exec(config[args.profile]['export_postexec'])
 
     elif args.mode == 'status':
         info = status(args.profile, config[args.profile])
