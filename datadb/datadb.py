@@ -8,6 +8,7 @@ from os import chmod, chown, stat, environ
 from enum import Enum
 import subprocess
 from requests import get, put, head
+from threading import Thread
 
 
 SSH_KEY_PATH = environ["DATADB_KEYPATH"] if "DATADB_KEYPATH" in environ else '/root/.ssh/datadb.key'
@@ -191,27 +192,35 @@ def backup(profile, conf, force=False):
         put_url = '{}new_backup?proto=archive&name={}&keep={}'.format(DATADB_HTTP_API, profile, conf["keep"])
         print("Putting to: {}".format(put_url))
 
+        tar_errors = []
+        error_scanner = Thread(target=scan_errors, args=(tar.stderr, tar_errors), daemon=True)
+        error_scanner.start()
+
         upload = put(put_url, data=WrappedStdout(tar.stdout))
         if upload.status_code != 200:
             raise Exception("Upload failed with code: {}".format(upload.status_code))
 
-        # Tar does not have an option to ignore file-removed errors. The warnings can be hidden but even with
-        # --ignore-failed-read, file-removed errors cause a non-zero exit. So, hide the warnings we don't care about
-        # using --warnings=no-xxx and scan output for unknown messages, assuming anything found is bad.
-        found_tar_error = False
-        tar_errors = []
-        for line in tar.stderr:
-            line = line.decode("UTF-8").strip()
-            if not line.startswith("./"):
-                found_tar_error = True
-                if line not in tar_errors:
-                    tar_errors.append(line)
-            print(line)
-
         tar.wait()
-        if tar.returncode != 0 and found_tar_error:
+        error_scanner.join()
+
+        if tar.returncode != 0 and len(tar_errors) > 0:
             raise Exception("Tar process exited with nonzero code {}. Tar errors: \n    {}".
                             format(tar.returncode, "\n    ".join(tar_errors)))
+
+
+def scan_errors(stream, error_list):
+    """
+    Read and print lines from a stream, appending messages that look like errors to error_list
+    """
+    # Tar does not have an option to ignore file-removed errors. The warnings can be hidden but even with
+    # --ignore-failed-read, file-removed errors cause a non-zero exit. So, hide the warnings we don't care about
+    # using --warnings=no-xxx and scan output for unknown messages, assuming anything found is bad.
+    for line in stream:
+        line = line.decode("UTF-8").strip()
+        if not line.startswith("./"):
+            if line not in error_list:
+                error_list.append(line)
+        print(line)
 
 
 def status(profile, conf):
