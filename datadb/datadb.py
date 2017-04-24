@@ -161,7 +161,9 @@ def backup(profile, conf, force=False):
         # CD to local source dir
         # tar+gz data and stream to backup server
 
-        args_tar = ['tar', '--exclude=.datadb.lock']
+        args_tar = ['ionice', '-c', '3',
+                    'nice', '-n', '19',
+                    'tar', '--exclude=.datadb.lock', '--warning=no-file-changed', '--ignore-failed-read']
 
         # Use pigz if available (Parallel gzip - http://zlib.net/pigz/)
         if has_binary("pigz"):
