@@ -12,8 +12,7 @@ from threading import Thread
 
 
 SSH_KEY_PATH = environ["DATADB_KEYPATH"] if "DATADB_KEYPATH" in environ else '/root/.ssh/datadb.key'
-RSYNC_DEFAULT_ARGS = ['rsync', '-avzr', '--exclude=.datadb.lock', '--whole-file', '--one-file-system', '--delete', '-e',
-                      'ssh -i {} -p 4874 -o StrictHostKeyChecking=no'.format(SSH_KEY_PATH)]
+RSYNC_DEFAULT_ARGS = ['rsync', '-avzr', '--exclude=.datadb.lock', '--whole-file', '--one-file-system', '--delete']
 DATADB_HTTP_API = environ.get('DATADB_HTTP_API', 'http://datadb.services.davepedu.com:4875/cgi-bin/')
 
 
@@ -123,6 +122,8 @@ def backup(profile, conf, force=False):
 
     if dest.scheme == 'rsync':
         args = RSYNC_DEFAULT_ARGS[:]
+        args += ['-e', 'ssh -i {} -p {} -o StrictHostKeyChecking=no'.format(SSH_KEY_PATH, dest.port or 22)]
+        # args += ["--port", str(dest.port or 22)]
 
         # Excluded paths
         if conf["exclude"]:
@@ -143,7 +144,7 @@ def backup(profile, conf, force=False):
         rsync_path, token = get(DATADB_HTTP_API + 'new_backup', params=new_backup_params).json()
 
         # Add rsync source path
-        args.append(normpath('nexus@{}:{}'.format(dest.netloc, rsync_path)) + '/')
+        args.append(normpath('nexus@{}:{}'.format(dest.hostname, rsync_path)) + '/')
 
         # print("Rsync backup call: {}".format(' '.join(args)))
 
@@ -198,6 +199,7 @@ def backup(profile, conf, force=False):
 
         upload = put(put_url, data=WrappedStdout(tar.stdout))
         if upload.status_code != 200:
+            print(upload.text)
             raise Exception("Upload failed with code: {}".format(upload.status_code))
 
         tar.wait()
