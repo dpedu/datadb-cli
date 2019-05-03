@@ -12,9 +12,9 @@ from threading import Thread
 
 
 SSH_KEY_PATH = environ["DATADB_KEYPATH"] if "DATADB_KEYPATH" in environ else '/root/.ssh/datadb.key'
-RSYNC_DEFAULT_ARGS = ['rsync', '-avzr', '-e', 'ssh -o StrictHostKeyChecking=no',
-                      '--exclude=.datadb.lock', '--whole-file', '--one-file-system', '--delete']
+RSYNC_DEFAULT_ARGS = ['rsync', '-avzr', '--exclude=.datadb.lock', '--whole-file', '--one-file-system', '--delete']
 DATADB_HTTP_API = environ.get('DATADB_HTTP_API', 'http://datadb.services.davepedu.com:4875/cgi-bin/')
+SSH_CMD = 'ssh -i {} -p {} -o StrictHostKeyChecking=no'
 
 
 class SyncStatus(Enum):
@@ -68,7 +68,7 @@ def restore(profile, conf, force=False):  # remote_uri, local_dir, identity='/ro
 
     if dest.scheme == 'rsync':
         args = RSYNC_DEFAULT_ARGS[:]
-        args += ['-e', 'ssh -i {} -p {}'.format(SSH_KEY_PATH, dest.port or 22)]
+        args += ['-e', SSH_CMD.format(SSH_KEY_PATH, dest.port or 22)]
 
         # Request backup server to prepare the backup, the returned dir is what we sync from
         rsync_path = get(DATADB_HTTP_API + 'get_backup', params={'proto': 'rsync', 'name': profile}).text.rstrip()
@@ -124,7 +124,7 @@ def backup(profile, conf, force=False):
 
     if dest.scheme == 'rsync':
         args = RSYNC_DEFAULT_ARGS[:]
-        args += ['-e', 'ssh -i {} -p {}'.format(SSH_KEY_PATH, dest.port or 22)]
+        args += ['-e', SSH_CMD.format(SSH_KEY_PATH, dest.port or 22)]
         # args += ["--port", str(dest.port or 22)]
 
         # Excluded paths
