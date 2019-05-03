@@ -13,7 +13,6 @@ from threading import Thread
 
 SSH_KEY_PATH = environ["DATADB_KEYPATH"] if "DATADB_KEYPATH" in environ else '/root/.ssh/datadb.key'
 RSYNC_DEFAULT_ARGS = ['rsync', '-avzr', '--exclude=.datadb.lock', '--whole-file', '--one-file-system', '--delete']
-DATADB_HTTP_API = environ.get('DATADB_HTTP_API', 'http://datadb.services.davepedu.com:4875/cgi-bin/')
 SSH_CMD = 'ssh -i {} -p {} -o StrictHostKeyChecking=no'
 
 
@@ -47,7 +46,7 @@ class WrappedStdout(object):
         self.stdout.close()
 
 
-def restore(profile, conf, force=False):  # remote_uri, local_dir, identity='/root/.ssh/datadb.key'
+def restore(api_url, profile, conf, force=False):  # remote_uri, local_dir, identity='/root/.ssh/datadb.key'
     """
     Restore data from datadb
     """
@@ -60,7 +59,7 @@ def restore(profile, conf, force=False):  # remote_uri, local_dir, identity='/ro
     original_perms = stat(conf["dir"])
     dest = urlparse(conf["uri"])
 
-    status_code = head(DATADB_HTTP_API + 'get_backup', params={'proto': dest.scheme, 'name': profile}).status_code
+    status_code = head(api_url + 'get_backup', params={'proto': dest.scheme, 'name': profile}).status_code
     if status_code == 404:
         print("Connected to datadb, but datasource '{}' doesn't exist. Exiting".format(profile))
         # TODO: special exit code >1 to indicate this?
@@ -71,7 +70,7 @@ def restore(profile, conf, force=False):  # remote_uri, local_dir, identity='/ro
         args += ['-e', SSH_CMD.format(SSH_KEY_PATH, dest.port or 22)]
 
         # Request backup server to prepare the backup, the returned dir is what we sync from
-        rsync_path = get(DATADB_HTTP_API + 'get_backup', params={'proto': 'rsync', 'name': profile}).text.rstrip()
+        rsync_path = get(api_url + 'get_backup', params={'proto': 'rsync', 'name': profile}).text.rstrip()
 
         # Add rsync source path
         args.append('nexus@{}:{}'.format(dest.hostname, normpath(rsync_path) + '/'))
@@ -85,7 +84,7 @@ def restore(profile, conf, force=False):  # remote_uri, local_dir, identity='/ro
     elif dest.scheme == 'archive':
         # http request backup server
         # download tarball
-        args_curl = ['curl', '-s', '-v', '-XGET', '{}get_backup?proto=archive&name={}'.format(DATADB_HTTP_API, profile)]
+        args_curl = ['curl', '-s', '-v', '-XGET', '{}get_backup?proto=archive&name={}'.format(api_url, profile)]
         # unpack
         args_tar = [get_tarcmd(), 'zxv', '-C', normpath(conf["dir"]) + '/']
 
@@ -110,7 +109,7 @@ def restore(profile, conf, force=False):  # remote_uri, local_dir, identity='/ro
     # TODO apply other permissions
 
 
-def backup(profile, conf, force=False):
+def backup(api_url, profile, conf, force=False):
     """
     Backup data to datadb
     """
@@ -143,7 +142,7 @@ def backup(profile, conf, force=False):
         if conf["inplace"]:
             new_backup_params["inplace"] = 1
         # Hit backupdb via http to retreive absolute path of rsync destination of remote server
-        rsync_path, token = get(DATADB_HTTP_API + 'new_backup', params=new_backup_params).json()
+        rsync_path, token = get(api_url + 'new_backup', params=new_backup_params).json()
 
         # Add rsync source path
         args.append(normpath('nexus@{}:{}'.format(dest.hostname, rsync_path)) + '/')
@@ -158,7 +157,7 @@ def backup(profile, conf, force=False):
 
         # confirm completion if backup wasnt already in place
         if not conf["inplace"]:
-            put(DATADB_HTTP_API + 'new_backup', params={'proto': 'rsync', 'name': profile, 'token': token,
+            put(api_url + 'new_backup', params={'proto': 'rsync', 'name': profile, 'token': token,
                                                         'keep': conf["keep"]})
 
     elif dest.scheme == 'archive':
@@ -197,7 +196,7 @@ def backup(profile, conf, force=False):
 
         tar = subprocess.Popen(args_tar, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=tar_dir)
 
-        put_url = '{}new_backup?proto=archive&name={}&keep={}'.format(DATADB_HTTP_API, profile, conf["keep"])
+        put_url = '{}new_backup?proto=archive&name={}&keep={}'.format(api_url, profile, conf["keep"])
         print("Putting to: {}".format(put_url))
 
         tar_errors = []
@@ -337,7 +336,11 @@ def main():
     config.read(conf_path)
 
     config = {section: {k: config[section][k] for k in config[section]} for section in config.sections()}
+    global_config = {}
     for conf_k, conf_dict in config.items():
+        if conf_k == "_backupdb":
+            global_config = conf_dict
+            continue
         for expect_param, expect_default in conf_params.items():
             if expect_param not in conf_dict.keys():
                 conf_dict[expect_param] = expect_default
@@ -349,6 +352,7 @@ def main():
 
     parser.add_argument('-f', '--force', default=False, action='store_true',
                         help='force restore operation if destination data already exists')
+    parser.add_argument('--http-api', help="http endpoint", default=environ.get('DATADB_HTTP_API'))
     parser.add_argument('-n', '--no-exec', default=False, action='store_true', help='don\'t run pre/post-exec commands')
     parser.add_argument('-b', '--no-pre-exec', default=False, action='store_true', help='don\'t run pre-exec commands')
     parser.add_argument('-m', '--no-post-exec', default=False, action='store_true',
@@ -365,13 +369,19 @@ def main():
 
     subparser_modes = parser.add_subparsers(dest='mode', help='modes (only "rsync")')
 
-    subparser_backup = subparser_modes.add_parser('backup', help='backup to datastore')  # NOQA
-
-    subparser_restore = subparser_modes.add_parser('restore', help='restore from datastore')  # NOQA
-
-    subparser_status = subparser_modes.add_parser('status', help='get info for profile')  # NOQA
+    subparser_modes.add_parser('backup', help='backup to datastore')
+    subparser_modes.add_parser('restore', help='restore from datastore')
+    subparser_modes.add_parser('status', help='get info for profile')
 
     args = parser.parse_args()
+
+    if args.http_api:
+        api = args.http_api
+    else:
+        api = global_config.get("http_api", None)
+
+    if not api:
+        parser.error("--http-api is requried")
 
     if args.no_exec:
         args.no_pre_exec = True
@@ -381,7 +391,7 @@ def main():
         if not args.no_pre_exec and config[args.profile]['restore_preexec']:
             shell_exec(config[args.profile]['restore_preexec'])
 
-        restore(args.profile, config[args.profile], force=args.force)
+        restore(api, args.profile, config[args.profile], force=args.force)
 
         if not args.no_post_exec and config[args.profile]['restore_postexec']:
             shell_exec(config[args.profile]['restore_postexec'])
@@ -391,7 +401,7 @@ def main():
             shell_exec(config[args.profile]['export_preexec'])
 
         try:
-            backup(args.profile, config[args.profile], force=args.force)
+            backup(api, args.profile, config[args.profile], force=args.force)
         finally:
             if not args.no_post_exec and config[args.profile]['export_postexec']:
                 shell_exec(config[args.profile]['export_postexec'])
@@ -402,6 +412,7 @@ def main():
 
     else:
         parser.print_usage()
+
 
 if __name__ == '__main__':
     main()
