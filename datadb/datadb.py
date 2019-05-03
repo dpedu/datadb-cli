@@ -12,7 +12,8 @@ from threading import Thread
 
 
 SSH_KEY_PATH = environ["DATADB_KEYPATH"] if "DATADB_KEYPATH" in environ else '/root/.ssh/datadb.key'
-RSYNC_DEFAULT_ARGS = ['rsync', '-avzr', '--exclude=.datadb.lock', '--whole-file', '--one-file-system', '--delete']
+RSYNC_DEFAULT_ARGS = ['rsync', '-avzr', '-e', 'ssh -o StrictHostKeyChecking=no',
+                      '--exclude=.datadb.lock', '--whole-file', '--one-file-system', '--delete']
 DATADB_HTTP_API = environ.get('DATADB_HTTP_API', 'http://datadb.services.davepedu.com:4875/cgi-bin/')
 
 
@@ -67,12 +68,13 @@ def restore(profile, conf, force=False):  # remote_uri, local_dir, identity='/ro
 
     if dest.scheme == 'rsync':
         args = RSYNC_DEFAULT_ARGS[:]
+        args += ['-e', 'ssh -i {} -p {}'.format(SSH_KEY_PATH, dest.port or 22)]
 
         # Request backup server to prepare the backup, the returned dir is what we sync from
         rsync_path = get(DATADB_HTTP_API + 'get_backup', params={'proto': 'rsync', 'name': profile}).text.rstrip()
 
         # Add rsync source path
-        args.append('nexus@{}:{}'.format(dest.netloc, normpath(rsync_path) + '/'))
+        args.append('nexus@{}:{}'.format(dest.hostname, normpath(rsync_path) + '/'))
 
         # Add local dir
         args.append(normpath(conf["dir"]) + '/')
@@ -85,7 +87,7 @@ def restore(profile, conf, force=False):  # remote_uri, local_dir, identity='/ro
         # download tarball
         args_curl = ['curl', '-s', '-v', '-XGET', '{}get_backup?proto=archive&name={}'.format(DATADB_HTTP_API, profile)]
         # unpack
-        args_tar = ['tar', 'zxv', '-C', normpath(conf["dir"]) + '/']
+        args_tar = [get_tarcmd(), 'zxv', '-C', normpath(conf["dir"]) + '/']
 
         print("Tar restore call: {} | {}".format(' '.join(args_curl), ' '.join(args_tar)))
 
@@ -122,7 +124,7 @@ def backup(profile, conf, force=False):
 
     if dest.scheme == 'rsync':
         args = RSYNC_DEFAULT_ARGS[:]
-        args += ['-e', 'ssh -i {} -p {} -o StrictHostKeyChecking=no'.format(SSH_KEY_PATH, dest.port or 22)]
+        args += ['-e', 'ssh -i {} -p {}'.format(SSH_KEY_PATH, dest.port or 22)]
         # args += ["--port", str(dest.port or 22)]
 
         # Excluded paths
@@ -163,13 +165,18 @@ def backup(profile, conf, force=False):
         # CD to local source dir
         # tar+gz data and stream to backup server
 
-        args_tar = ['ionice', '-c', '3',
-                    'nice', '-n', '19',
-                    'tar', '--exclude=.datadb.lock',
-                           '--warning=no-file-changed',
-                           '--warning=no-file-removed',
-                           '--warning=no-file-ignored',
-                           '--warning=no-file-shrank']
+        args_tar = []
+
+        if has_binary("ionice"):
+            args_tar += ['ionice', '-c', '3']
+
+        args_tar += ['nice', '-n', '19']
+        args_tar += [get_tarcmd(),
+                     '--exclude=.datadb.lock',
+                     '--warning=no-file-changed',
+                     '--warning=no-file-removed',
+                     '--warning=no-file-ignored',
+                     '--warning=no-file-shrank']
 
         # Use pigz if available (Parallel gzip - http://zlib.net/pigz/)
         if has_binary("pigz"):
@@ -243,6 +250,10 @@ def shell_exec(cmd, workdir='/tmp/'):
     """
     print("Calling: {}".format(cmd))
     subprocess.Popen(cmd, shell=True, cwd=workdir).wait()
+
+
+def get_tarcmd():
+    return "gtar" if has_binary("gtar") else "tar"
 
 
 def has_binary(name):
